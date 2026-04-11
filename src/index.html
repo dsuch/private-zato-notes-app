@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Notes App</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <div id="sidebar">
+      <div id="sidebar-header">
+        <span id="sidebar-title">Notes</span>
+      </div>
+      <div id="notes-list"></div>
+    </div>
+    <div id="sidebar-resizer"></div>
+    <div id="main">
+      <div id="toolbar">
+        <div id="toolbar-left">
+          <button id="btn-new" title="New note">New</button>
+          <button id="btn-open" title="Open file from disk">Open</button>
+          <button id="btn-close" title="Close current note">Close</button>
+          <button id="btn-undo-close" title="Undo close (reopen recently closed)">Undo close</button>
+        </div>
+        <div id="toolbar-right">
+          <button id="btn-push" title="Commit and push notes to repo">Push</button>
+        </div>
+      </div>
+      <div id="editor-container">
+        <div id="editor"></div>
+      </div>
+      <div id="status-bar">
+        <span id="status-text">Ready</span>
+      </div>
+    </div>
+  </div>
+  <div id="undo-close-menu" class="dropdown-menu hidden"></div>
+  <div id="error-dialog" class="error-dialog hidden">
+    <div class="error-dialog-content">
+      <div class="error-dialog-title">Error</div>
+      <textarea id="error-dialog-text" readonly></textarea>
+      <div class="error-dialog-buttons">
+        <button id="error-dialog-copy">Copy</button>
+        <button id="error-dialog-close">Close</button>
+      </div>
+    </div>
+  </div>
+  <script src="../dist/renderer.bundle.js"></script>
+</body>
+</html>
