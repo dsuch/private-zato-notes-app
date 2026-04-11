@@ -138,7 +138,11 @@ ipcMain.handle('list-notes', async () => {
         path: path.join(NOTES_DIR, f),
         mtime: fs.statSync(path.join(NOTES_DIR, f)).mtimeMs,
       }))
-      .sort((a, b) => b.mtime - a.mtime);
+      .sort((a, b) => {
+        const aStat = fs.statSync(a.path);
+        const bStat = fs.statSync(b.path);
+        return bStat.birthtimeMs - aStat.birthtimeMs;
+      });
     console.log('[main] list-notes returning', result.length, 'files');
     return result;
   } catch (e) {
@@ -234,7 +238,9 @@ ipcMain.handle('push-to-repo', async () => {
     console.log('[main] git push done');
     return { success: true, message: `Pushed to ${branch}` };
   } catch (err) {
-    const msg = err.stderr ? err.stderr.toString() : err.message;
+    const stderr = err.stderr ? err.stderr.toString() : '';
+    const stdout = err.stdout ? err.stdout.toString() : '';
+    const msg = stderr || stdout || err.message || String(err);
     console.error('[main] push-to-repo error:', msg);
     return { success: false, message: msg };
   }
@@ -273,6 +279,18 @@ ipcMain.handle('add-recently-closed', async (event, entry) => {
 
 ipcMain.handle('get-notes-dir', async () => {
   return NOTES_DIR;
+});
+
+const PROMPTS_DIR = path.join(__dirname, '..', 'prompts');
+const DEFAULT_PROMPT_FILE = path.join(PROMPTS_DIR, 'default.md');
+
+ipcMain.handle('get-default-prompt', async () => {
+  console.log('[main] get-default-prompt called');
+  if (!fs.existsSync(PROMPTS_DIR)) fs.mkdirSync(PROMPTS_DIR, { recursive: true });
+  if (!fs.existsSync(DEFAULT_PROMPT_FILE)) {
+    return null;
+  }
+  return fs.readFileSync(DEFAULT_PROMPT_FILE, 'utf-8');
 });
 
 ipcMain.handle('load-settings', async () => {

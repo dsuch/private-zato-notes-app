@@ -1,4 +1,4 @@
-.PHONY: install clean build run
+.PHONY: install clean build run test
 
 NODE_VERSION := 22
 
@@ -18,3 +18,6 @@ build:
 
 run:
 	npx electron . --no-sandbox
+
+test:
+	node test/test_first_line.js

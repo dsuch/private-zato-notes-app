@@ -1,12 +1,10 @@
 const { Editor } = require('@tiptap/core');
 const StarterKit = require('@tiptap/starter-kit').default || require('@tiptap/starter-kit');
 const CodeBlockLowlight = require('@tiptap/extension-code-block-lowlight').CodeBlockLowlight || require('@tiptap/extension-code-block-lowlight').default || require('@tiptap/extension-code-block-lowlight');
-const Underline = require('@tiptap/extension-underline').default || require('@tiptap/extension-underline');
 const Placeholder = require('@tiptap/extension-placeholder').default || require('@tiptap/extension-placeholder');
 const TaskList = require('@tiptap/extension-task-list').default || require('@tiptap/extension-task-list');
 const TaskItem = require('@tiptap/extension-task-item').default || require('@tiptap/extension-task-item');
 const Image = require('@tiptap/extension-image').default || require('@tiptap/extension-image');
-const Link = require('@tiptap/extension-link').default || require('@tiptap/extension-link');
 const TextAlign = require('@tiptap/extension-text-align').default || require('@tiptap/extension-text-align');
 const { Table, TableRow, TableCell, TableHeader } = require('@tiptap/extension-table');
 const { all, createLowlight } = require('lowlight');
@@ -20,6 +18,7 @@ let untitledCounter = 0;
 let editorFontSize = 14;
 let sidebarWidth = 260;
 let settingsSaveTimer = null;
+let isLoadingNote = false;
 
 const AUTO_SAVE_DELAY = 3000;
 const SETTINGS_SAVE_DELAY = 500;
@@ -35,14 +34,40 @@ function logError(...args) {
 function showErrorDialog(err) {
   const text = typeof err === 'string' ? err : (err.stack || err.message || String(err));
   logError('Showing error dialog:', text);
-  const dialog = document.getElementById('error-dialog');
+  const dlg = document.getElementById('error-dialog');
   const textarea = document.getElementById('error-dialog-text');
   textarea.value = text;
-  dialog.classList.remove('hidden');
+  dlg.classList.remove('hidden');
 }
 
 function hideErrorDialog() {
   document.getElementById('error-dialog').classList.add('hidden');
+}
+
+function setupDialogDismiss() {
+  const dlg = document.getElementById('error-dialog');
+  const content = dlg.querySelector('.error-dialog-content');
+
+  dlg.addEventListener('click', (e) => {
+    if (!content.contains(e.target)) {
+      hideErrorDialog();
+    }
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      if (!dlg.classList.contains('hidden')) {
+        hideErrorDialog();
+        e.preventDefault();
+        return;
+      }
+      const menu = document.getElementById('undo-close-menu');
+      if (!menu.classList.contains('hidden')) {
+        menu.classList.add('hidden');
+        e.preventDefault();
+      }
+    }
+  });
 }
 
 function scheduleSettingsSave() {
@@ -63,44 +88,47 @@ function initEditor() {
     editor = new Editor({
       element: document.getElementById('editor'),
       extensions: [
-        StarterKit.configure({
-          codeBlock: false,
-        }),
-        CodeBlockLowlight.configure({
-          lowlight,
-          defaultLanguage: 'plaintext',
-        }),
-        Underline,
-        Placeholder.configure({
-          placeholder: 'Start writing...',
-        }),
-        TaskList,
-        TaskItem.configure({
-          nested: true,
-        }),
-        Image,
-        Link.configure({
-          openOnClick: false,
-        }),
-        TextAlign.configure({
-          types: ['heading', 'paragraph'],
-        }),
-        Table.configure({
-          resizable: true,
-        }),
-        TableRow,
-        TableCell,
-        TableHeader,
+      StarterKit.configure({
+        codeBlock: false,
+      }),
+      CodeBlockLowlight.configure({
+        lowlight,
+        defaultLanguage: 'plaintext',
+      }),
+      Placeholder.configure({
+        placeholder: ({ editor }) => {
+          if (currentFile) return '';
+          return 'Start writing...';
+        },
+        showOnlyWhenEditable: true,
+        showOnlyCurrent: true,
+      }),
+      TaskList,
+      TaskItem.configure({
+        nested: true,
+      }),
+      Image,
+      TextAlign.configure({
+        types: ['heading', 'paragraph'],
+      }),
+      Table.configure({
+        resizable: true,
+      }),
+      TableRow,
+      TableCell,
+      TableHeader,
       ],
-      content: '',
-      autofocus: true,
-      onUpdate: () => {
-        log('Editor content updated');
-        scheduleAutoSave();
-      },
-      onCreate: () => {
-        log('Editor created successfully');
-      },
+    content: '',
+    autofocus: true,
+    onUpdate: () => {
+      if (isLoadingNote) return;
+      log('Editor content updated');
+      scheduleAutoSave();
+      updateCurrentPreview();
+    },
+    onCreate: () => {
+      log('Editor created successfully');
+    },
     });
 
     setupEditorFontZoom();
@@ -175,7 +203,6 @@ async function saveCurrentNote() {
     await window.api.saveNote(currentFile.path, content);
     log('Saved note:', currentFile.name, '(', content.length, 'chars)');
     setStatus('Saved');
-    refreshNotesList();
   } catch (e) {
     logError('Failed to save note:', e);
     showErrorDialog(e);
@@ -187,66 +214,122 @@ function setStatus(text) {
   document.getElementById('status-text').textContent = text;
 }
 
+let cachedNotesList = [];
+
 async function refreshNotesList() {
   log('Refreshing notes list');
   try {
     const notes = await window.api.listNotes();
     const list = document.getElementById('notes-list');
-    list.innerHTML = '';
 
     log('Got', notes.length, 'notes');
 
-    for (const note of notes) {
-      const item = document.createElement('div');
-      item.className = 'note-item' + (currentFile && currentFile.path === note.path ? ' active' : '');
-      item.addEventListener('click', () => openNote(note));
+    const notesChanged = notes.length !== cachedNotesList.length ||
+      notes.some((n, i) => !cachedNotesList[i] || n.path !== cachedNotesList[i].path);
 
-      const title = document.createElement('div');
-      title.className = 'note-item-title';
-      title.textContent = note.name;
+    if (notesChanged) {
+      cachedNotesList = notes;
+      list.innerHTML = '';
 
-      const preview = document.createElement('div');
-      preview.className = 'note-item-preview';
+      for (const note of notes) {
+        const item = document.createElement('div');
+        item.className = 'note-item';
+        item.dataset.path = note.path;
+        item.addEventListener('click', () => openNote(note));
 
-      try {
-        const content = await window.api.readNote(note.path);
-        const stripped = stripHtml(content).trim();
-        const firstLine = stripped.split('\n')[0] || '';
-        preview.textContent = firstLine.substring(0, 60) || 'Empty note';
-      } catch {
-        preview.textContent = 'Empty note';
+        const title = document.createElement('div');
+        title.className = 'note-item-title';
+        title.textContent = note.name;
+
+        const preview = document.createElement('div');
+        preview.className = 'note-item-preview';
+
+        try {
+          const content = await window.api.readNote(note.path);
+          const firstLine = getFirstLineFromHtml(content);
+          preview.textContent = firstLine.substring(0, 60);
+        } catch {
+          preview.textContent = '';
+        }
+
+        item.appendChild(title);
+        item.appendChild(preview);
+        list.appendChild(item);
       }
-
-      item.appendChild(title);
-      item.appendChild(preview);
-      list.appendChild(item);
     }
+
+    const items = list.querySelectorAll('.note-item');
+    items.forEach(item => {
+      if (currentFile && item.dataset.path === currentFile.path) {
+        item.classList.add('active');
+      } else {
+        item.classList.remove('active');
+      }
+    });
   } catch (e) {
     logError('Failed to refresh notes list:', e);
     showErrorDialog(e);
   }
 }
 
-function stripHtml(html) {
-  const tmp = document.createElement('div');
-  tmp.innerHTML = html;
-  return tmp.textContent || tmp.innerText || '';
+function getFirstLineFromHtml(html) {
+  if (!html) return '';
+  const withNewlines = html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|h[1-6]|li|blockquote|pre)>/gi, '\n')
+    .replace(/<[^>]+>/g, '');
+  const decoded = withNewlines
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, ' ');
+  const firstLine = decoded.split('\n')[0];
+  return firstLine;
+}
+
+function updateCurrentPreview() {
+  if (!currentFile || !editor) return;
+  const html = editor.getHTML();
+  const firstLine = getFirstLineFromHtml(html);
+  const items = document.getElementById('notes-list').querySelectorAll('.note-item');
+  items.forEach(item => {
+    if (item.dataset.path === currentFile.path) {
+      const preview = item.querySelector('.note-item-preview');
+      if (preview) preview.textContent = firstLine.substring(0, 60);
+    }
+  });
 }
 
 async function openNote(note) {
   log('Opening note:', note.name, note.path);
   try {
-    if (currentFile && editor) {
-      await saveCurrentNote();
+    if (currentFile && editor && currentFile.path !== note.path) {
+      const prevFile = currentFile;
+      const prevContent = editor.getHTML();
+      window.api.saveNote(prevFile.path, prevContent);
     }
 
     currentFile = note;
+
+    const items = document.getElementById('notes-list').querySelectorAll('.note-item');
+    items.forEach(item => {
+      if (item.dataset.path === note.path) {
+        item.classList.add('active');
+      } else {
+        item.classList.remove('active');
+      }
+    });
+
     const content = await window.api.readNote(note.path);
+    isLoadingNote = true;
     editor.commands.setContent(content || '');
+    isLoadingNote = false;
     setStatus(note.name);
-    refreshNotesList();
     log('Note opened:', note.name);
   } catch (e) {
+    isLoadingNote = false;
     logError('Failed to open note:', e);
     showErrorDialog(e);
   }
@@ -259,19 +342,89 @@ async function createNewNote() {
       await saveCurrentNote();
     }
 
-    untitledCounter++;
+    const notes = await window.api.listNotes();
+    const existingUntitled = notes
+      .map(n => n.name)
+      .filter(n => n.startsWith('Untitled-'))
+      .map(n => parseInt(n.replace('Untitled-', '').replace(/\.[^.]+$/, ''), 10))
+      .filter(n => !isNaN(n));
+    untitledCounter = existingUntitled.length > 0 ? Math.max(...existingUntitled) + 1 : 1;
+
     const fileName = `Untitled-${untitledCounter}.md`;
     log('New note filename:', fileName);
     const filePath = await window.api.createNote(fileName);
     log('New note created at:', filePath);
     const note = { name: fileName, path: filePath };
     currentFile = note;
+    isLoadingNote = true;
     editor.commands.setContent('');
+    isLoadingNote = false;
     setStatus(fileName);
     await refreshNotesList();
     log('New note ready:', fileName);
   } catch (e) {
+    isLoadingNote = false;
     logError('Failed to create new note:', e);
+    showErrorDialog(e);
+  }
+}
+
+const DEFAULT_PROMPT_CONTENT = `be super terse, do not babble, and keep your mouth shut, do not ask me any questions, do not offer advice i did not ask about, just follow my instructions and questions, nothing else is expected from you
+and never use ALL CAPS with me, and never use "This Silly Naming Convention" in headers, always this "Normal naming convention" in headers
+and never use "\u2014" instead always use a normal "-" dash (minus sign)
+and never use "&", always use "and"
+and never use semicolons, always use a comma
+and never give me any summaries, or executive summaries, or reality checks or any other crap like that
+i repeat, do not ask my any questions
+and make sure all the links are always inline, and always clickable
+and i repeat, keep your mouth shut, do not ask me any questions, do not offer any advice unasked, just keep your mouth shut
+and never give me multiple options, i only ever want a single answer, not any or's
+and never use the "sidecar" stupid term, never fucking use it
+and never tell me "You are right to push back." i can't stand it
+-------------
+`;
+
+async function createNewPromptNote() {
+  log('Creating new prompt note');
+  try {
+    if (currentFile && editor) {
+      await saveCurrentNote();
+    }
+
+    let promptContent = await window.api.getDefaultPrompt();
+    if (!promptContent) {
+      promptContent = DEFAULT_PROMPT_CONTENT;
+    }
+
+    const promptHtml = promptContent
+      .split('\n')
+      .map(line => `<p>${line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') || '<br>'}</p>`)
+      .join('');
+
+    const notes = await window.api.listNotes();
+    const existingUntitled = notes
+      .map(n => n.name)
+      .filter(n => n.startsWith('Untitled-'))
+      .map(n => parseInt(n.replace('Untitled-', '').replace(/\.[^.]+$/, ''), 10))
+      .filter(n => !isNaN(n));
+    untitledCounter = existingUntitled.length > 0 ? Math.max(...existingUntitled) + 1 : 1;
+
+    const fileName = `Untitled-${untitledCounter}.md`;
+    log('New prompt note filename:', fileName);
+    const filePath = await window.api.createNote(fileName);
+    await window.api.saveNote(filePath, promptHtml);
+    log('New prompt note created at:', filePath);
+    const note = { name: fileName, path: filePath };
+    currentFile = note;
+    isLoadingNote = true;
+    editor.commands.setContent(promptHtml);
+    isLoadingNote = false;
+    setStatus(fileName);
+    await refreshNotesList();
+    log('New prompt note ready:', fileName);
+  } catch (e) {
+    isLoadingNote = false;
+    logError('Failed to create new prompt note:', e);
     showErrorDialog(e);
   }
 }
@@ -423,9 +576,10 @@ async function pushToRepo() {
       log('Push succeeded:', result.message);
       setStatus(result.message);
     } else {
-      logError('Push failed:', result.message);
+      const errMsg = result.message || '(no error message returned)';
+      logError('Push failed:', errMsg);
       setStatus('Push failed');
-      showErrorDialog('Push failed:\n\n' + result.message);
+      showErrorDialog('Push failed:\n\n' + errMsg);
     }
   } catch (e) {
     btn.classList.remove('pushing');
@@ -467,7 +621,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadAppSettings();
   initEditor();
   setupSidebarResizer();
+  setupDialogDismiss();
 
+  document.getElementById('btn-new-prompt').addEventListener('click', () => {
+    log('New prompt button clicked');
+    createNewPromptNote();
+  });
   document.getElementById('btn-new').addEventListener('click', () => {
     log('New button clicked');
     createNewNote();

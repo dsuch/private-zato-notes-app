@@ -13,4 +13,5 @@ contextBridge.exposeInMainWorld('api', {
   getNotesDir: () => ipcRenderer.invoke('get-notes-dir'),
   loadSettings: () => ipcRenderer.invoke('load-settings'),
   saveSettings: (s) => ipcRenderer.invoke('save-settings', s),
+  getDefaultPrompt: () => ipcRenderer.invoke('get-default-prompt'),
 });
