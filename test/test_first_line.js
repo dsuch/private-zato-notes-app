@@ -1,7 +1,7 @@
 const assert = require('assert');
 
 function getFirstLineFromHtml(html) {
-  if (!html) return '';
+  if (!html) return '\u00A0';
   const withNewlines = html
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/(p|div|h[1-6]|li|blockquote|pre)>/gi, '\n')
@@ -14,29 +14,33 @@ function getFirstLineFromHtml(html) {
     .replace(/&#39;/g, "'")
     .replace(/&nbsp;/g, ' ');
   const firstLine = decoded.split('\n')[0];
+  if (firstLine === '' || firstLine.trim() === '') return '\u00A0';
   return firstLine;
 }
 
+const NBSP = '\u00A0';
+
 const tests = [
-  { input: '', expected: '' },
-  { input: null, expected: '' },
-  { input: undefined, expected: '' },
-  { input: '<p></p>', expected: '' },
+  { input: '', expected: NBSP },
+  { input: null, expected: NBSP },
+  { input: undefined, expected: NBSP },
+  { input: '<p></p>', expected: NBSP },
   { input: '<p>hello world</p>', expected: 'hello world' },
   { input: '<p>first line</p><p>second line</p>', expected: 'first line' },
   { input: '<p>  leading spaces</p>', expected: '  leading spaces' },
-  { input: '<p></p><p>second</p>', expected: '' },
+  { input: '<p></p><p>second</p>', expected: NBSP },
   { input: '<h1>My Title</h1><p>body</p>', expected: 'My Title' },
   { input: '<p>has &amp; ampersand</p>', expected: 'has & ampersand' },
   { input: '<p>has &lt;tag&gt;</p>', expected: 'has <tag>' },
-  { input: '<p>   </p>', expected: '   ' },
-  { input: '<p>\t\ttabs</p>', expected: '\t\ttabs' },
+  { input: '<p>   </p>', expected: NBSP },
+  { input: '<p>\t\t</p>', expected: NBSP },
   { input: '<p>line one<br>line two</p>', expected: 'line one' },
   { input: '<p><strong>bold</strong> text</p>', expected: 'bold text' },
   { input: '<p><code>code</code> and text</p>', expected: 'code and text' },
   { input: '<pre><code>def foo():\n  pass</code></pre>', expected: 'def foo():' },
   { input: '<p>only line</p>', expected: 'only line' },
   { input: '<div>div content</div><p>para</p>', expected: 'div content' },
+  { input: '<p>\t\ttabs here</p>', expected: '\t\ttabs here' },
 ];
 
 let passed = 0;

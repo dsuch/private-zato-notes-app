@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { execSync } = require('child_process');
@@ -65,14 +65,17 @@ function createWindow() {
   });
 
   mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.control && input.key === 'w') {
+      mainWindow.webContents.send('close-current-note');
+      event.preventDefault();
+      return;
+    }
     if (input.control && input.key === 'F12') {
-      console.log('[main] Toggling devtools');
       mainWindow.webContents.toggleDevTools();
       event.preventDefault();
       return;
     }
     if (input.key === 'F12') {
-      console.log('[main] Toggling devtools');
       mainWindow.webContents.toggleDevTools();
       event.preventDefault();
       return;
@@ -112,6 +115,7 @@ process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true';
 
 app.whenReady().then(() => {
   console.log('[main] App ready, creating window');
+  Menu.setApplicationMenu(null);
   createWindow();
 });
 
@@ -266,6 +270,7 @@ ipcMain.handle('add-recently-closed', async (event, entry) => {
     if (fs.existsSync(RECENTLY_CLOSED_FILE)) {
       try { data = JSON.parse(fs.readFileSync(RECENTLY_CLOSED_FILE, 'utf-8')); } catch { data = []; }
     }
+    data = data.filter(item => item.path !== entry.path);
     data.unshift({ ...entry, closedAt: Date.now() });
     const cutoff = Date.now() - 24 * 60 * 60 * 1000;
     data = data.filter(item => item.closedAt > cutoff);

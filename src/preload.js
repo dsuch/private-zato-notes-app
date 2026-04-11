@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
+  onCloseNote: (callback) => ipcRenderer.on('close-current-note', callback),
   listNotes: () => ipcRenderer.invoke('list-notes'),
   readNote: (filePath) => ipcRenderer.invoke('read-note', filePath),
   saveNote: (filePath, content) => ipcRenderer.invoke('save-note', filePath, content),

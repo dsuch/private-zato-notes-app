@@ -20,6 +20,13 @@ let sidebarWidth = 260;
 let settingsSaveTimer = null;
 let isLoadingNote = false;
 
+// In-memory cache: path -> html content
+const noteCache = {};
+// In-memory recently closed list
+let recentlyClosed = [];
+// In-memory notes metadata list
+let cachedNotesMeta = [];
+
 const AUTO_SAVE_DELAY = 3000;
 const SETTINGS_SAVE_DELAY = 500;
 
@@ -88,47 +95,46 @@ function initEditor() {
     editor = new Editor({
       element: document.getElementById('editor'),
       extensions: [
-      StarterKit.configure({
-        codeBlock: false,
-      }),
-      CodeBlockLowlight.configure({
-        lowlight,
-        defaultLanguage: 'plaintext',
-      }),
-      Placeholder.configure({
-        placeholder: ({ editor }) => {
-          if (currentFile) return '';
-          return 'Start writing...';
-        },
-        showOnlyWhenEditable: true,
-        showOnlyCurrent: true,
-      }),
-      TaskList,
-      TaskItem.configure({
-        nested: true,
-      }),
-      Image,
-      TextAlign.configure({
-        types: ['heading', 'paragraph'],
-      }),
-      Table.configure({
-        resizable: true,
-      }),
-      TableRow,
-      TableCell,
-      TableHeader,
+        StarterKit.configure({
+          codeBlock: false,
+        }),
+        CodeBlockLowlight.configure({
+          lowlight,
+          defaultLanguage: 'plaintext',
+        }),
+        Placeholder.configure({
+          placeholder: ({ editor }) => {
+            if (currentFile) return '';
+            return 'Start writing...';
+          },
+          showOnlyWhenEditable: true,
+          showOnlyCurrent: true,
+        }),
+        TaskList,
+        TaskItem.configure({
+          nested: true,
+        }),
+        Image,
+        TextAlign.configure({
+          types: ['heading', 'paragraph'],
+        }),
+        Table.configure({
+          resizable: true,
+        }),
+        TableRow,
+        TableCell,
+        TableHeader,
       ],
-    content: '',
-    autofocus: true,
-    onUpdate: () => {
-      if (isLoadingNote) return;
-      log('Editor content updated');
-      scheduleAutoSave();
-      updateCurrentPreview();
-    },
-    onCreate: () => {
-      log('Editor created successfully');
-    },
+      content: '',
+      autofocus: true,
+      onUpdate: () => {
+        if (isLoadingNote) return;
+        scheduleAutoSave();
+        updateCurrentPreview();
+      },
+      onCreate: () => {
+        log('Editor created successfully');
+      },
     });
 
     setupEditorFontZoom();
@@ -167,7 +173,6 @@ function setupSidebarResizer() {
     resizer.classList.add('dragging');
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
-    log('Sidebar resize started');
     e.preventDefault();
   });
 
@@ -200,6 +205,7 @@ async function saveCurrentNote() {
   if (!currentFile || !editor) return;
   try {
     const content = editor.getHTML();
+    noteCache[currentFile.path] = content;
     await window.api.saveNote(currentFile.path, content);
     log('Saved note:', currentFile.name, '(', content.length, 'chars)');
     setStatus('Saved');
@@ -210,70 +216,11 @@ async function saveCurrentNote() {
 }
 
 function setStatus(text) {
-  log('Status:', text);
   document.getElementById('status-text').textContent = text;
 }
 
-let cachedNotesList = [];
-
-async function refreshNotesList() {
-  log('Refreshing notes list');
-  try {
-    const notes = await window.api.listNotes();
-    const list = document.getElementById('notes-list');
-
-    log('Got', notes.length, 'notes');
-
-    const notesChanged = notes.length !== cachedNotesList.length ||
-      notes.some((n, i) => !cachedNotesList[i] || n.path !== cachedNotesList[i].path);
-
-    if (notesChanged) {
-      cachedNotesList = notes;
-      list.innerHTML = '';
-
-      for (const note of notes) {
-        const item = document.createElement('div');
-        item.className = 'note-item';
-        item.dataset.path = note.path;
-        item.addEventListener('click', () => openNote(note));
-
-        const title = document.createElement('div');
-        title.className = 'note-item-title';
-        title.textContent = note.name;
-
-        const preview = document.createElement('div');
-        preview.className = 'note-item-preview';
-
-        try {
-          const content = await window.api.readNote(note.path);
-          const firstLine = getFirstLineFromHtml(content);
-          preview.textContent = firstLine.substring(0, 60);
-        } catch {
-          preview.textContent = '';
-        }
-
-        item.appendChild(title);
-        item.appendChild(preview);
-        list.appendChild(item);
-      }
-    }
-
-    const items = list.querySelectorAll('.note-item');
-    items.forEach(item => {
-      if (currentFile && item.dataset.path === currentFile.path) {
-        item.classList.add('active');
-      } else {
-        item.classList.remove('active');
-      }
-    });
-  } catch (e) {
-    logError('Failed to refresh notes list:', e);
-    showErrorDialog(e);
-  }
-}
-
 function getFirstLineFromHtml(html) {
-  if (!html) return '';
+  if (!html) return '\u00A0';
   const withNewlines = html
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/(p|div|h[1-6]|li|blockquote|pre)>/gi, '\n')
@@ -286,12 +233,14 @@ function getFirstLineFromHtml(html) {
     .replace(/&#39;/g, "'")
     .replace(/&nbsp;/g, ' ');
   const firstLine = decoded.split('\n')[0];
+  if (firstLine === '' || firstLine.trim() === '') return '\u00A0';
   return firstLine;
 }
 
 function updateCurrentPreview() {
   if (!currentFile || !editor) return;
   const html = editor.getHTML();
+  noteCache[currentFile.path] = html;
   const firstLine = getFirstLineFromHtml(html);
   const items = document.getElementById('notes-list').querySelectorAll('.note-item');
   items.forEach(item => {
@@ -302,29 +251,75 @@ function updateCurrentPreview() {
   });
 }
 
-async function openNote(note) {
-  log('Opening note:', note.name, note.path);
+async function loadAllNotesIntoCache() {
+  log('Loading all notes into RAM');
+  const notes = await window.api.listNotes();
+  cachedNotesMeta = notes;
+  for (const note of notes) {
+    try {
+      noteCache[note.path] = await window.api.readNote(note.path);
+    } catch {
+      noteCache[note.path] = '';
+    }
+  }
+  log('Loaded', Object.keys(noteCache).length, 'notes into cache');
+  return notes;
+}
+
+function buildNotesList(notes) {
+  cachedNotesMeta = notes;
+  const list = document.getElementById('notes-list');
+  list.innerHTML = '';
+
+  for (const note of notes) {
+    const item = document.createElement('div');
+    item.className = 'note-item';
+    item.dataset.path = note.path;
+    item.addEventListener('click', () => openNote(note));
+
+    const title = document.createElement('div');
+    title.className = 'note-item-title';
+    title.textContent = note.name;
+
+    const preview = document.createElement('div');
+    preview.className = 'note-item-preview';
+    const content = noteCache[note.path] || '';
+    const firstLine = getFirstLineFromHtml(content);
+    preview.textContent = firstLine.substring(0, 60);
+
+    item.appendChild(title);
+    item.appendChild(preview);
+    list.appendChild(item);
+  }
+
+  updateActiveState();
+}
+
+function updateActiveState() {
+  const items = document.getElementById('notes-list').querySelectorAll('.note-item');
+  items.forEach(item => {
+    if (currentFile && item.dataset.path === currentFile.path) {
+      item.classList.add('active');
+    } else {
+      item.classList.remove('active');
+    }
+  });
+}
+
+function openNote(note) {
+  log('Opening note:', note.name);
   try {
     if (currentFile && editor && currentFile.path !== note.path) {
-      const prevFile = currentFile;
-      const prevContent = editor.getHTML();
-      window.api.saveNote(prevFile.path, prevContent);
+      noteCache[currentFile.path] = editor.getHTML();
+      window.api.saveNote(currentFile.path, noteCache[currentFile.path]);
     }
 
     currentFile = note;
+    updateActiveState();
 
-    const items = document.getElementById('notes-list').querySelectorAll('.note-item');
-    items.forEach(item => {
-      if (item.dataset.path === note.path) {
-        item.classList.add('active');
-      } else {
-        item.classList.remove('active');
-      }
-    });
-
-    const content = await window.api.readNote(note.path);
+    const content = noteCache[note.path] || '';
     isLoadingNote = true;
-    editor.commands.setContent(content || '');
+    editor.commands.setContent(content);
     isLoadingNote = false;
     setStatus(note.name);
     log('Note opened:', note.name);
@@ -339,7 +334,8 @@ async function createNewNote() {
   log('Creating new note');
   try {
     if (currentFile && editor) {
-      await saveCurrentNote();
+      noteCache[currentFile.path] = editor.getHTML();
+      window.api.saveNote(currentFile.path, noteCache[currentFile.path]);
     }
 
     const notes = await window.api.listNotes();
@@ -351,16 +347,17 @@ async function createNewNote() {
     untitledCounter = existingUntitled.length > 0 ? Math.max(...existingUntitled) + 1 : 1;
 
     const fileName = `Untitled-${untitledCounter}.md`;
-    log('New note filename:', fileName);
     const filePath = await window.api.createNote(fileName);
-    log('New note created at:', filePath);
+    noteCache[filePath] = '';
     const note = { name: fileName, path: filePath };
     currentFile = note;
     isLoadingNote = true;
     editor.commands.setContent('');
     isLoadingNote = false;
     setStatus(fileName);
-    await refreshNotesList();
+
+    const updatedNotes = await window.api.listNotes();
+    buildNotesList(updatedNotes);
     log('New note ready:', fileName);
   } catch (e) {
     isLoadingNote = false;
@@ -388,7 +385,8 @@ async function createNewPromptNote() {
   log('Creating new prompt note');
   try {
     if (currentFile && editor) {
-      await saveCurrentNote();
+      noteCache[currentFile.path] = editor.getHTML();
+      window.api.saveNote(currentFile.path, noteCache[currentFile.path]);
     }
 
     let promptContent = await window.api.getDefaultPrompt();
@@ -410,17 +408,18 @@ async function createNewPromptNote() {
     untitledCounter = existingUntitled.length > 0 ? Math.max(...existingUntitled) + 1 : 1;
 
     const fileName = `Untitled-${untitledCounter}.md`;
-    log('New prompt note filename:', fileName);
     const filePath = await window.api.createNote(fileName);
+    noteCache[filePath] = promptHtml;
     await window.api.saveNote(filePath, promptHtml);
-    log('New prompt note created at:', filePath);
     const note = { name: fileName, path: filePath };
     currentFile = note;
     isLoadingNote = true;
     editor.commands.setContent(promptHtml);
     isLoadingNote = false;
     setStatus(fileName);
-    await refreshNotesList();
+
+    const updatedNotes = await window.api.listNotes();
+    buildNotesList(updatedNotes);
     log('New prompt note ready:', fileName);
   } catch (e) {
     isLoadingNote = false;
@@ -433,60 +432,95 @@ async function openFileFromDisk() {
   log('Opening file from disk');
   try {
     const result = await window.api.openFileDialog();
-    if (!result) {
-      log('File dialog canceled');
-      return;
-    }
-
-    log('File selected:', result.name, result.path);
+    if (!result) return;
 
     if (currentFile && editor) {
-      await saveCurrentNote();
+      noteCache[currentFile.path] = editor.getHTML();
+      window.api.saveNote(currentFile.path, noteCache[currentFile.path]);
     }
 
+    noteCache[result.path] = result.content || '';
     currentFile = { name: result.name, path: result.path };
+    isLoadingNote = true;
     editor.commands.setContent(result.content || '');
+    isLoadingNote = false;
     setStatus(result.name);
-    refreshNotesList();
+
+    const updatedNotes = await window.api.listNotes();
+    buildNotesList(updatedNotes);
     log('File opened from disk:', result.name);
   } catch (e) {
+    isLoadingNote = false;
     logError('Failed to open file from disk:', e);
     showErrorDialog(e);
   }
 }
 
-async function closeCurrentNote() {
-  log('Closing current note');
+let isClosing = false;
+
+function closeCurrentNote() {
+  if (isClosing) return;
+  if (!currentFile) return;
+  isClosing = true;
+  log('Closing current note:', currentFile.name);
   try {
-    if (!currentFile) {
-      log('No note to close');
-      return;
+    noteCache[currentFile.path] = editor.getHTML();
+    window.api.saveNote(currentFile.path, noteCache[currentFile.path]);
+
+    recentlyClosed = recentlyClosed.filter(r => r.path !== currentFile.path);
+    recentlyClosed.unshift({ name: currentFile.name, path: currentFile.path, closedAt: Date.now() });
+    window.api.addRecentlyClosed({ name: currentFile.name, path: currentFile.path });
+
+    const closedPath = currentFile.path;
+    currentFile = null;
+    isLoadingNote = true;
+    editor.commands.setContent('');
+    isLoadingNote = false;
+    setStatus('Ready');
+
+    const listEl = document.getElementById('notes-list');
+    const closedItem = listEl.querySelector('[data-path="' + closedPath + '"]');
+    if (closedItem) closedItem.remove();
+
+    const remaining = listEl.querySelectorAll('.note-item');
+    if (remaining.length > 0) {
+      const nextPath = remaining[0].dataset.path;
+      const cached = cachedNotesMeta.find(n => n.path === nextPath);
+      if (cached) openNote(cached);
     }
 
-    await saveCurrentNote();
-
-    await window.api.addRecentlyClosed({
-      name: currentFile.name,
-      path: currentFile.path,
-    });
-    log('Added to recently closed:', currentFile.name);
-
-    currentFile = null;
-    editor.commands.setContent('');
-    setStatus('Ready');
-    await refreshNotesList();
     log('Note closed');
   } catch (e) {
     logError('Failed to close note:', e);
     showErrorDialog(e);
   }
+  isClosing = false;
+}
+
+function getPreviewFromCache(filePath) {
+  const html = noteCache[filePath] || '';
+  if (!html) return '';
+  const withNewlines = html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|h[1-6]|li|blockquote|pre)>/gi, '\n')
+    .replace(/<[^>]+>/g, '');
+  const decoded = withNewlines
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, ' ');
+  const trimmed = decoded.replace(/^\s+/, '');
+  const firstLine = trimmed.split('\n')[0] || '';
+  return firstLine.substring(0, 60);
 }
 
 async function showUndoCloseMenu() {
   log('Showing undo close menu');
   try {
-    const items = await window.api.getRecentlyClosed();
-    log('Recently closed items:', items.length);
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    const items = recentlyClosed.filter(r => r.closedAt > cutoff);
     const menu = document.getElementById('undo-close-menu');
 
     if (items.length === 0) {
@@ -501,23 +535,32 @@ async function showUndoCloseMenu() {
         nameEl.className = 'dropdown-item-name';
         nameEl.textContent = item.name;
 
-        const timeEl = document.createElement('div');
-        timeEl.className = 'dropdown-item-time';
-        timeEl.textContent = formatTimeAgo(item.closedAt);
+        const previewEl = document.createElement('div');
+        previewEl.className = 'dropdown-item-time';
+        previewEl.textContent = getPreviewFromCache(item.path) || formatTimeAgo(item.closedAt);
 
         el.appendChild(nameEl);
-        el.appendChild(timeEl);
+        el.appendChild(previewEl);
 
-        el.addEventListener('click', async () => {
+        el.addEventListener('mousedown', async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
           menu.classList.add('hidden');
-          log('Reopening closed file:', item.name, item.path);
+          log('Undo close clicked:', item.name, item.path);
           try {
-            const content = await window.api.readNote(item.path);
-            currentFile = { name: item.name, path: item.path };
-            editor.commands.setContent(content || '');
+            if (!noteCache[item.path]) {
+              noteCache[item.path] = await window.api.readNote(item.path);
+            }
+            const note = { name: item.name, path: item.path };
+            currentFile = note;
+            isLoadingNote = true;
+            editor.commands.setContent(noteCache[item.path] || '');
+            isLoadingNote = false;
             setStatus(item.name);
-            refreshNotesList();
-            log('Reopened:', item.name);
+
+            const updatedNotes = await window.api.listNotes();
+            buildNotesList(updatedNotes);
+            log('Undo close done:', item.name);
           } catch (e) {
             logError('Failed to reopen file:', e);
             showErrorDialog(e);
@@ -565,7 +608,8 @@ async function pushToRepo() {
     setStatus('Pushing to repo...');
 
     if (currentFile && editor) {
-      await saveCurrentNote();
+      noteCache[currentFile.path] = editor.getHTML();
+      await window.api.saveNote(currentFile.path, noteCache[currentFile.path]);
     }
 
     const result = await window.api.pushToRepo();
@@ -615,7 +659,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const textarea = document.getElementById('error-dialog-text');
     textarea.select();
     document.execCommand('copy');
-    log('Error text copied to clipboard');
   });
 
   await loadAppSettings();
@@ -623,39 +666,28 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupSidebarResizer();
   setupDialogDismiss();
 
-  document.getElementById('btn-new-prompt').addEventListener('click', () => {
-    log('New prompt button clicked');
-    createNewPromptNote();
-  });
-  document.getElementById('btn-new').addEventListener('click', () => {
-    log('New button clicked');
-    createNewNote();
-  });
-  document.getElementById('btn-open').addEventListener('click', () => {
-    log('Open button clicked');
-    openFileFromDisk();
-  });
-  document.getElementById('btn-close').addEventListener('click', () => {
-    log('Close button clicked');
-    closeCurrentNote();
-  });
-  document.getElementById('btn-undo-close').addEventListener('click', () => {
-    log('Undo close button clicked');
-    showUndoCloseMenu();
-  });
-  document.getElementById('btn-push').addEventListener('click', () => {
-    log('Push button clicked');
-    pushToRepo();
-  });
+  window.api.onCloseNote(() => closeCurrentNote());
 
-  log('Button handlers attached');
+  document.getElementById('btn-new').addEventListener('click', createNewNote);
+  document.getElementById('btn-new-prompt').addEventListener('click', createNewPromptNote);
+  document.getElementById('btn-open').addEventListener('click', openFileFromDisk);
+  document.getElementById('btn-close').addEventListener('click', closeCurrentNote);
+  document.getElementById('btn-undo-close').addEventListener('click', showUndoCloseMenu);
+  document.getElementById('btn-push').addEventListener('click', pushToRepo);
 
-  await refreshNotesList();
+  try {
+    const persisted = await window.api.getRecentlyClosed();
+    recentlyClosed = persisted || [];
+    log('Loaded', recentlyClosed.length, 'recently closed from disk');
+  } catch (e) {
+    logError('Failed to load recently closed:', e);
+  }
 
-  const notes = await window.api.listNotes();
+  const notes = await loadAllNotesIntoCache();
+  buildNotesList(notes);
+
   if (notes.length > 0) {
-    log('Auto-opening first note:', notes[0].name);
-    await openNote(notes[0]);
+    openNote(notes[0]);
   }
 
   log('App initialization complete');

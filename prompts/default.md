@@ -10,4 +10,5 @@ and i repeat, keep your mouth shut, do not ask me any questions, do not offer an
 and never give me multiple options, i only ever want a single answer, not any or's
 and never use the "sidecar" stupid term, never fucking use it
 and never tell me "You are right to push back." i can't stand it
+and when you explain code to me, show me snippets of what you are explaining, but that really means snippets, so 2-4-6 lines of code at most
 -------------
