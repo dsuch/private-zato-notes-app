@@ -60,6 +60,7 @@ function createWindow() {
 
   mainWindow.webContents.once('did-finish-load', () => {
     mainWindow.webContents.setZoomLevel(settings.zoomLevel);
+    mainWindow.webContents.openDevTools({ mode: 'bottom' });
     console.log('[main] Window loaded, zoom level set to', settings.zoomLevel);
   });
 
@@ -106,6 +107,8 @@ function createWindow() {
     saveSettings(settings);
   });
 }
+
+process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true';
 
 app.whenReady().then(() => {
   console.log('[main] App ready, creating window');
