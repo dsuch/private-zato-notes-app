@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Notes App
+Comment=Desktop notes application
+Exec=bash -c "cd /home/dsuch/projects/private-zato-notes-app && make run"
+Icon=/home/dsuch/projects/private-zato-notes-app/icon.png
+Terminal=false
+Type=Application
+Categories=Utility;TextEditor;
+StartupWMClass=notes-app

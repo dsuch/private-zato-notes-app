@@ -22,18 +22,21 @@
           <button id="btn-new" title="New note">New</button>
           <button id="btn-new-prompt" title="New note from prompt template">New prompt</button>
           <button id="btn-open" title="Open file from disk">Open</button>
+          <button id="btn-save" title="Save file" style="display:none;">Save</button>
           <button id="btn-close" title="Close current note">Close</button>
           <button id="btn-undo-close" title="Undo close (reopen recently closed)">Undo close</button>
-        </div>
-        <div id="toolbar-right">
           <button id="btn-push" title="Commit and push notes to repo">Push</button>
         </div>
-      </div>
-      <div id="editor-container">
-        <div id="editor"></div>
+        <div id="toolbar-right">
+          <button id="btn-quit" title="Close the application">Close</button>
+        </div>
       </div>
       <div id="status-bar">
         <span id="status-text">Ready</span>
+      </div>
+      <div id="editor-container">
+        <div id="editor"></div>
+        <div id="codemirror-container" class="hidden"></div>
       </div>
     </div>
   </div>

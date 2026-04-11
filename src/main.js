@@ -6,6 +6,7 @@ const { execSync } = require('child_process');
 const NOTES_DIR = path.join(__dirname, '..', 'notes');
 const APP_DATA_DIR = path.join(__dirname, '..', 'app-data');
 const RECENTLY_CLOSED_FILE = path.join(APP_DATA_DIR, 'recently-closed.json');
+const OPEN_EXTERNAL_FILE = path.join(APP_DATA_DIR, 'open-external.json');
 const SETTINGS_FILE = path.join(__dirname, '..', 'settings.json');
 
 if (!fs.existsSync(NOTES_DIR)) fs.mkdirSync(NOTES_DIR, { recursive: true });
@@ -60,7 +61,7 @@ function createWindow() {
 
   mainWindow.webContents.once('did-finish-load', () => {
     mainWindow.webContents.setZoomLevel(settings.zoomLevel);
-    mainWindow.webContents.openDevTools({ mode: 'bottom' });
+    // DevTools opened on F12 only
     console.log('[main] Window loaded, zoom level set to', settings.zoomLevel);
   });
 
@@ -286,6 +287,25 @@ ipcMain.handle('get-notes-dir', async () => {
   return NOTES_DIR;
 });
 
+ipcMain.handle('get-open-external', async () => {
+  console.log('[main] get-open-external called');
+  if (!fs.existsSync(OPEN_EXTERNAL_FILE)) return [];
+  try {
+    return JSON.parse(fs.readFileSync(OPEN_EXTERNAL_FILE, 'utf-8'));
+  } catch {
+    return [];
+  }
+});
+
+ipcMain.handle('save-open-external', async (event, list) => {
+  console.log('[main] save-open-external:', list.length, 'files');
+  try {
+    fs.writeFileSync(OPEN_EXTERNAL_FILE, JSON.stringify(list, null, 2), 'utf-8');
+  } catch (e) {
+    console.error('[main] save-open-external error:', e);
+  }
+});
+
 const PROMPTS_DIR = path.join(__dirname, '..', 'prompts');
 const DEFAULT_PROMPT_FILE = path.join(PROMPTS_DIR, 'default.md');
 
@@ -308,4 +328,9 @@ ipcMain.handle('save-settings', async (event, newSettings) => {
   settings = { ...settings, ...newSettings };
   saveSettings(settings);
   return true;
+});
+
+ipcMain.handle('quit-app', async () => {
+  console.log('[main] quit-app called');
+  app.quit();
 });

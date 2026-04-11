@@ -15,4 +15,7 @@ contextBridge.exposeInMainWorld('api', {
   loadSettings: () => ipcRenderer.invoke('load-settings'),
   saveSettings: (s) => ipcRenderer.invoke('save-settings', s),
   getDefaultPrompt: () => ipcRenderer.invoke('get-default-prompt'),
+  getOpenExternal: () => ipcRenderer.invoke('get-open-external'),
+  saveOpenExternal: (list) => ipcRenderer.invoke('save-open-external', list),
+  quitApp: () => ipcRenderer.invoke('quit-app'),
 });

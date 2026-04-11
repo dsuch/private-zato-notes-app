@@ -21,3 +21,4 @@ run:
 
 test:
 	node test/test_first_line.js
+	node test/test_code_block.js
