@@ -68,13 +68,26 @@ html, body {
 }
 
 #sidebar-header {
-  padding: 14px 16px 10px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  padding: 10px 16px;
   border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+}
+
+#sidebar-header #btn-quit {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  background: var(--push-bg);
+  color: var(--push-text);
+  transition: background 0.15s;
+}
+
+#sidebar-header #btn-quit:hover {
+  background: var(--push-hover);
 }
 
 #notes-list {
@@ -184,14 +197,6 @@ html, body {
   background: var(--btn-hover);
 }
 
-#btn-quit {
-  background: var(--push-bg) !important;
-  color: var(--push-text) !important;
-}
-
-#btn-quit:hover {
-  background: var(--push-hover) !important;
-}
 
 #btn-push.pushing {
   opacity: 0.6;

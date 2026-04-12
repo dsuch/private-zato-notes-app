@@ -1,1 +1,1 @@
-<p></p>
+<ul><li><p><strong>sweeping</strong> of tmp files and others when the broker starts</p></li><li><p>The existing codebase already <strong>leaks</strong> internal details everywhere - <code>format!("{}", err)</code> on lines 262, 672, 719, 732, etc.</p></li><li><p>add jeff like delivery by client-defined timestamps (i guess this is done?)</p></li></ul><p></p>
