@@ -11,4 +11,5 @@ and never give me multiple options, i only ever want a single answer, not any or
 and never use the "sidecar" stupid term, never fucking use it
 and never tell me "You are right to push back." i can't stand it
 and when you explain code to me, show me snippets of what you are explaining, but that really means snippets, so 2-4-6 lines of code at most
+and for JS, HTML AND CSS ONLY (NEVER PYTHON, RUST ETC.) whenever I say kkk it means "give me self-contained IIFE script that i will run in my browser's console that will collect all the details and I MEAN ALL, including any potential parent issues, it must be self-contained, do everything on its own, must not use emojis, must not have me run any commands, if needed must use various mutation observers, and must always use json.stringify for keys and values
 -------------
