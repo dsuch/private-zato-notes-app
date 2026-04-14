@@ -55,7 +55,7 @@ let recentlyClosed = [];
 let cachedNotesMeta = [];
 const closedNotePaths = new Set();
 
-const AUTO_SAVE_DELAY = 3000;
+const AUTO_SAVE_DELAY = 300;
 const SETTINGS_SAVE_DELAY = 500;
 
 function log(...args) {
